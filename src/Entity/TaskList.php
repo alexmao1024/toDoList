@@ -19,7 +19,7 @@ class TaskList
     private $name;
 
     #[ORM\ManyToOne(targetEntity: User::class, inversedBy: 'taskLists')]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\JoinColumn(nullable: false,onDelete: 'CASCADE')]
     private $user;
 
     #[ORM\OneToMany(mappedBy: 'list', targetEntity: Task::class, orphanRemoval: true)]

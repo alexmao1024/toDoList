@@ -2,18 +2,27 @@
 
 namespace App\Controller;
 
-use App\Repository\TaskRepository;
+use App\Entity\TaskList;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 
 class TasksController extends AbstractController
 {
-    #[Route('/tasks/show', name: 'tasks_show',methods: ['GET'])]
-    public function TasksShow(TaskRepository $taskRepository): Response
+    #[Route('/tasks/{userId}/{listId}', name: 'tasks_show',methods: ['GET'])]
+    public function tasksShow(EntityManagerInterface $entityManager,int $userId,int $listId): Response
     {
         $response = new Response();
-        $tasks = $taskRepository->findAll();
+        $list = $entityManager->getRepository(TaskList::class)->find($listId);
+
+        /**@var TaskList $list**/
+        if ($list->getUser()->getId() !== $userId)
+        {
+            throw new \Exception('Not have permission to access this list.',403);
+        }
+        $tasks = $list->getTasks();
+
         if (!$tasks)
         {
             return $this->json([]);
@@ -22,8 +31,6 @@ class TasksController extends AbstractController
         foreach ( $tasks as $key => $task )
         {
             $resultArray[$key]['taskId'] = $task->getId();
-            $resultArray[$key]['userId'] = $task->getUserr()->getId();
-            $resultArray[$key]['type'] = $task->getType();
             $resultArray[$key]['name'] = $task->getName();
             $resultArray[$key]['context'] = $task->getContext();
             $task->getStartTime() ?

@@ -2,10 +2,9 @@
 
 namespace App\Tests;
 
-use App\Entity\Task;
+use App\Entity\TaskList;
 use App\Entity\User;
 use App\Factory\Factory;
-use DateTime;
 use PHPUnit\Framework\TestCase;
 
 class FactoryTest extends TestCase
@@ -17,8 +16,8 @@ class FactoryTest extends TestCase
 
         $this->assertInstanceOf(User::class,$user);
 
-        $task = $factory->createTask($user, '工作', '去上班', '记得按时上班不要迟到', DateTime::createFromFormat('Y-m-d H:i:s', date('Y-m-d H:i:s')));
+        $list = $factory->createList($user, '工作');
 
-        $this->assertInstanceOf(Task::class,$task);
+        $this->assertInstanceOf(TaskList::class,$list);
     }
 }
