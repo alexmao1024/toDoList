@@ -29,32 +29,78 @@ class ListsService
         return $user->getTaskLists();
     }
 
-    public function listCreate(string $name,int $userId): TaskList|null
+    public function listCreate(array $lists,int $userId): array|null
     {
         $user = $this->entityManager->getRepository(User::class)->find($userId);
-        $list = new TaskList();
-        $list->setUser($user);
-        $list->setName($name);
+        $listIds = array();
+        foreach ($lists as $key => $listName)
+        {
+            $list = new TaskList();
+            $list->setUser($user);
+            $trimName = trim($listName);
+            if (!$trimName) {
+                throw new \Exception('INVALID_CHARACTER',400);
+            }
+            if (strlen($trimName)>50)
+            {
+                throw new \Exception('LENGTH_TOO_LARGE',400);
+            }
+            $list->setName($trimName);
+            $list->setDone(false);
+            $this->entityManager->persist($list);
+            $this->entityManager->flush();
 
-        $this->entityManager->persist($list);
-
-        $this->entityManager->flush();
-
-        return $list;
+            $listIds[$key] = $list->getId();
+        }
+        return $listIds;
     }
 
-    public function listRemove(TaskList $list)
+    public function listsRemove(array $listIds,string $token)
     {
-        $this->entityManager->remove($list);
+        foreach ( $listIds as $listId){
+            $list = $this->listGet($listId);
+            if (!$list)
+            {
+                throw new \Exception('LISTS_NOT_FOUND',404);
+            }
 
+            if ($list->getUser()->getToken() !== $token)
+            {
+                throw new \Exception('INVALID_TOKEN',401);
+            }
+            $this->entityManager->remove($list);
+        }
         $this->entityManager->flush();
     }
 
     public function listUpdate(TaskList $list,string $name)
     {
-        if ($name)
+        $trimName = trim($name);
+        if (!$trimName) {
+            throw new \Exception('INVALID_CHARACTER',400);
+        }
+        if (strlen($trimName)>50)
         {
-            $list->setname($name);
+            throw new \Exception('LENGTH_TOO_LARGE',400);
+        }
+        $list->setname($trimName);
+
+        $this->entityManager->flush();
+    }
+
+    public function listUpdateDone(TaskList $list,bool $boolean)
+    {
+        $list->setDone($boolean);
+
+        $this->entityManager->flush();
+    }
+
+    public function listsUpdateAllDone(Collection|array $lists,bool $boolean)
+    {
+        foreach ( $lists as $list )
+        {
+            /**@var TaskList $list**/
+            $list->setDone($boolean);
         }
 
         $this->entityManager->flush();

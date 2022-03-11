@@ -21,15 +21,19 @@ class ListsController extends AbstractController
     }
 
     #[Route('/lists/{userId}', name: 'lists_show',methods: ['GET'])]
-    public function listsShow(int $userId): Response
+    public function listsShow(Request $request,int $userId): Response
     {
         $response = new Response();
 
         $user = $this->usersService->findUserById($userId);
-
         if (!$user)
         {
-            throw new \Exception('Wrong User',401);
+            throw new \Exception('USER_NOT_FOUND',404);
+        }
+
+        if ($user->getToken() !== $request->query->get('auth'))
+        {
+            throw new \Exception('INVALID_TOKEN',401);
         }
 
         $lists = $this->listsService->listsGet($userId);
@@ -42,8 +46,9 @@ class ListsController extends AbstractController
         $resultArray = array();
         foreach ( $lists as $key => $list )
         {
-            $resultArray[$key]['listId'] = $list->getId();
+            $resultArray[$key]['id'] = $list->getId();
             $resultArray[$key]['name'] = $list->getName();
+            $resultArray[$key]['done'] = $list->getDone();
         }
 
         return $response->setContent(json_encode($resultArray));
@@ -52,79 +57,95 @@ class ListsController extends AbstractController
     #[Route('/lists/{userId}', name: 'lists_create', methods: ['POST'])]
     public function listsCreate(Request $request,int $userId):Response
     {
+        $lists = array();
         $requestArray = $request->toArray();
-        $name = $requestArray[0]['listName'];
-
         $user = $this->usersService->findUserById($userId);
-
         if (!$user)
         {
-            throw new \Exception('Wrong User',401);
+            throw new \Exception('USER_NOT_FOUND',404);
         }
 
-        if (!$name)
+        if ($user->getToken() !== $request->query->get('auth'))
         {
-            throw new \Exception('Passed an empty argument.',400);
+            throw new \Exception('INVALID_TOKEN',401);
+        }
+        foreach ( $requestArray['lists'] as $key => $list )
+        {
+            $lists[$key] = $list;
+            if (!$list)
+            {
+                throw new \Exception('POST_FAILED',400);
+            }
         }
 
-        $list = $this->listsService->listCreate($name, $userId);
+        $listIds = $this->listsService->listCreate($lists, $userId);
 
         return $this->json([
-            'listId'=>$list->getId()
+            'ids'=>$listIds
         ]);
     }
 
-    #[Route('/lists/{listId}/{userId}', name: 'lists_remove', methods: ['DELETE'])]
-    public function listsRemove(int $listId,int $userId): Response
+    #[Route('/lists/{userId}', name: 'lists_remove', methods: ['DELETE'])]
+    public function listsRemove(Request $request,int $userId): Response
     {
+        $requestArray = $request->toArray();
         $user = $this->usersService->findUserById($userId);
-
         if (!$user)
         {
-            throw new \Exception('Wrong User',401);
+            throw new \Exception('USER_NOT_FOUND',404);
         }
 
-        $list = $this->listsService->listGet($listId);
-        if (!$list)
-        {
-            throw new \Exception('No list found for: '.$listId,404);
-        }
+        $this->listsService->listsRemove($requestArray,$request->query->get('auth'));
 
-        if ($list->getUser()->getId() !== $userId)
-        {
-            throw new \Exception('No permission to delete for: '.$listId, 403);
-        }
-
-        $this->listsService->listRemove($list);
         return $this->json([],200);
 
     }
 
-    #[Route('/lists/{listId}/{userId}', name: 'lists_update', methods: ['PATCH'])]
-    public function listsUpdate(Request $request,int $listId,int $userId): Response
+    #[Route('/lists/{userId}', name: 'lists_update', methods: ['PATCH'])]
+    public function listsUpdate(Request $request,int $userId): Response
     {
         $requestArray = $request->toArray();
-        $name = $requestArray[0]['name'];
+        $filter = $requestArray['filter'];
+        $modifiedAllDone = $requestArray['modifiedAllDone'];
+        $boolean = $requestArray['boolean'];
+        $id = $requestArray['id'];
+        $name = $requestArray['name'];
+        $done = $requestArray['done'];
 
         $user = $this->usersService->findUserById($userId);
 
         if (!$user)
         {
-            throw new \Exception('Wrong User',401);
+            throw new \Exception('USER_NOT_FOUND',404);
         }
 
-        $list = $this->listsService->listGet($listId);
-        if (!$list)
-        {
-            throw new \Exception('No list found for: '.$listId,404);
+        if (!$modifiedAllDone){
+            $list = $this->listsService->listGet($id);
+            if (!$list)
+            {
+                throw new \Exception('LIST_NOT_FOUND',404);
+            }
+            if ($list->getUser()->getToken() !== $request->query->get('auth'))
+            {
+                throw new \Exception('INVALID_TOKEN',401);
+            }
+            if ($filter){
+                $this->listsService->listUpdate($list,$name);
+            }else{
+                $this->listsService->listUpdateDone($list,$done);
+            }
+        }else{
+            if ($user->getToken() !== $request->query->get('auth'))
+            {
+                throw new \Exception('INVALID_TOKEN',401);
+            }
+            $lists = $this->listsService->listsGet($userId);
+            if (!$lists[0])
+            {
+                throw new \Exception('ALL_LISTS_NOT_FOUND',404);
+            }
+            $this->listsService->listsUpdateAllDone($lists,$boolean);
         }
-        if ($list->getUser()->getId() !== $userId)
-        {
-            throw new \Exception('No permission to modify for: '.$listId, 403);
-        }
-
-        $this->listsService->listUpdate($list,$name);
-
         return $this->json([],200);
     }
 

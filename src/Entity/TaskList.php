@@ -25,6 +25,9 @@ class TaskList
     #[ORM\OneToMany(mappedBy: 'list', targetEntity: Task::class, orphanRemoval: true)]
     private $tasks;
 
+    #[ORM\Column(type: 'boolean')]
+    private $done;
+
     public function __construct()
     {
         $this->tasks = new ArrayCollection();
@@ -85,6 +88,18 @@ class TaskList
                 $task->setList(null);
             }
         }
+
+        return $this;
+    }
+
+    public function getDone(): ?bool
+    {
+        return $this->done;
+    }
+
+    public function setDone(bool $done): self
+    {
+        $this->done = $done;
 
         return $this;
     }

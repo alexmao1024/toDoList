@@ -23,18 +23,52 @@ class UsersController extends AbstractController
     {
 
         $requestArray = $request->toArray();
-        $username = $requestArray[0]['username'];
+        $username = $requestArray['username'];
+        $password = $requestArray['password'];
 
-        $user = $this->usersService->findUserByName($username);
+        $user1 = $this->usersService->findUserByName($username);
 
-        if (!$user){
-            throw new \Exception('Login in failed',401);
+        if (!$user1){
+            throw new \Exception('USERNAME_NOT_FOUND',404);
+        }else{
+            $user2 = $this->usersService->findUser($username,$password);
+            if (!$user2){
+                throw new \Exception('INVALID_PASSWORD',401);
+            }
         }
+        $this->usersService->createToken($user2);
 
         return $this->json(
             [
-                'userId'=>$user->getId(),
-                'username'=>$user->getName()
+                'id' => $user2->getId(),
+                'username'=> $user2->getName(),
+                'token' => $user2->getToken(),
+                'expiresIn' => time() + 3600
+            ]
+        );
+    }
+
+    #[Route('/signUp',name: 'signUp',methods: ['POST'])]
+    public function userSignUp(Request $request): Response
+    {
+
+        $requestArray = $request->toArray();
+        $username = $requestArray['username'];
+        $password = $requestArray['password'];
+
+        $user = $this->usersService->findUserByName($username);
+        if ($user){
+            throw new \Exception('USERNAME_EXISTS',409);
+        }
+
+        $newUser = $this->usersService->createUser($username,$password);
+
+        return $this->json(
+            [
+                'id' => $newUser->getId(),
+                'username'=> $newUser->getName(),
+                'token' => $newUser->getToken(),
+                'expiresIn' => time() + 3600
             ]
         );
     }

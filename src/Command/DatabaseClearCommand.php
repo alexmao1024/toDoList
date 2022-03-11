@@ -3,6 +3,7 @@
 namespace App\Command;
 
 use App\Entity\Task;
+use App\Entity\TaskList;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -42,7 +43,8 @@ class DatabaseClearCommand extends Command
         if ($arg1 == 'all') {
             $this->truncateEntities([
                 User::class,
-                Task::class
+                Task::class,
+                TaskList::class
             ]);
         }
 
@@ -55,6 +57,12 @@ class DatabaseClearCommand extends Command
         if ($arg1 == 'task') {
             $this->truncateEntities([
                 Task::class
+            ]);
+        }
+
+        if ($arg1 == 'list') {
+            $this->truncateEntities([
+                TaskList::class
             ]);
         }
 
