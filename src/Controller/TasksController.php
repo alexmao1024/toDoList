@@ -5,33 +5,42 @@ namespace App\Controller;
 use App\Entity\Task;
 use App\Service\ListsService;
 use App\Service\TasksService;
+use App\Service\WorkspaceService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Mercure\HubInterface;
+use Symfony\Component\Mercure\Update;
 use Symfony\Component\Routing\Annotation\Route;
 
 class TasksController extends AbstractController
 {
     private ListsService $listsService;
     private TasksService $tasksService;
+    private WorkspaceService $workspaceService;
 
-    public function __construct(ListsService $listsService,TasksService $tasksService)
+    public function __construct(ListsService $listsService,TasksService $tasksService,WorkspaceService $workspaceService)
     {
         $this->listsService = $listsService;
         $this->tasksService = $tasksService;
+        $this->workspaceService = $workspaceService;
     }
 
     #[Route('/tasks/{listId}', name: 'Tasks_show',methods: ['GET'])]
     public function tasksShow(Request $request,int $listId): Response
     {
         $response = new Response();
-
+        $workId = $request->query->get('workId');
+        $userId = $request->query->get('userId');
         $list = $this->listsService->listGet($listId);
         if (!$list)
         {
             throw new \Exception('LIST_NOT_FOUND',404);
         }
 
+        if ($workId != 0){
+            $this->handleWorkspaceToken((int)$workId,(int)$userId,$request,null,$list);
+        }
         if ($list->getUser()->getToken() !== $request->query->get('auth'))
         {
             throw new \Exception('INVALID_TOKEN',401);
@@ -51,8 +60,8 @@ class TasksController extends AbstractController
             $resultArray[$key]['id'] = $task->getId();
             $resultArray[$key]['name'] = $task->getName();
             $resultArray[$key]['content'] = $task->getContent();
-            $resultArray[$key]['startTime'] = $task->getStartTime();
-            $resultArray[$key]['endTime'] = $task->getEndTime();
+            $resultArray[$key]['startTime'] = $task->getStartTime()?$task->getStartTime()->format('Y/m/d H:i:s'):null;
+            $resultArray[$key]['endTime'] = $task->getEndTime()?$task->getEndTime()->format('Y/m/d H:i:s'):null;
             $resultArray[$key]['done'] = $task->getDone();
         }
 
@@ -60,18 +69,24 @@ class TasksController extends AbstractController
     }
 
     #[Route('/tasks/{listId}', name: 'task_create', methods: ['POST'])]
-    public function taskCreate(Request $request,int $listId):Response
+    public function taskCreate(Request $request,int $listId,HubInterface $hub):Response
     {
         $requestArray = $request->toArray();
         $name = $requestArray['name'];
         $content = $requestArray['content'];
         $startTime = $requestArray['startTime'];
         $endTime = $requestArray['endTime'];
+        $userId = $requestArray['userId'];
+        $workId = $requestArray['workId'];
 
         $list = $this->listsService->listGet($listId);
         if (!$list)
         {
             throw new \Exception('LIST_NOT_FOUND',404);
+        }
+        if ($workId != 0)
+        {
+            $this->handleWorkspaceToken($workId,$userId,$request,null,$list);
         }
 
         if ($list->getUser()->getToken() !== $request->query->get('auth'))
@@ -81,17 +96,44 @@ class TasksController extends AbstractController
 
         $task = $this->tasksService->taskCreate($name, $content, $startTime, $endTime, $listId);
 
+        $update = new Update(
+            'https://todolist.com/tasks/workspaces',
+            json_encode([
+                'type'=>'create',
+                'id'=>$task->getId(),
+                'name'=>$name,
+                'content'=>$content,
+                'startTime'=> $startTime,
+                'endTime'=>$endTime,
+                'userId'=>$userId,
+                'workId'=>$task->getList()->getWorkspace()?->getId(),
+                'listId'=>$task->getList()->getId()
+            ])
+        );
+
+        $hub->publish($update);
+
         return $this->json([
             'id'=>$task->getId()
         ]);
     }
 
-    #[Route('/tasks', name: 'tasks_remove', methods: ['DELETE'])]
-    public function tasksRemove(Request $request): Response
+    #[Route('/tasks/{userId}', name: 'tasks_remove', methods: ['DELETE'])]
+    public function tasksRemove(Request $request,int $userId,HubInterface $hub): Response
     {
         $requestArray = $request->toArray();
 
-        $this->tasksService->tasksRemove($requestArray,$request->query->get('auth'));
+        $this->tasksService->tasksRemove($requestArray,$request,$userId);
+
+        $update = new Update(
+            'https://todolist.com/tasks/workspaces',
+            json_encode([
+                'type'=>'delete',
+                'ids'=>$requestArray
+            ])
+        );
+
+        $hub->publish($update);
 
         return $this->json([],200);
 
@@ -99,7 +141,7 @@ class TasksController extends AbstractController
 
 
     #[Route('/tasks', name: 'tasks_update', methods: ['PATCH'])]
-    public function tasksUpdate(Request $request): Response
+    public function tasksUpdate(Request $request,HubInterface $hub): Response
     {
         $requestArray = $request->toArray();
         $filter = $requestArray['filter'];
@@ -107,17 +149,23 @@ class TasksController extends AbstractController
         $boolean = $requestArray['boolean'];
         $taskId = $requestArray['taskId'];
         $listId = $requestArray['listId'];
+        $userId = $requestArray['userId'];
+        $workId = $requestArray['workId'];
         $name = $requestArray['name'];
         $content = $requestArray['content'];
         $startTime = $requestArray['startTime'];
         $endTime = $requestArray['endTime'];
         $done = $requestArray['done'];
 
+
         if (!$modifiedAllDone){
             $task = $this->tasksService->taskGet($taskId);
             if (!$task)
             {
                 throw new \Exception('TASK_NOT_FOUND',404);
+            }
+            if ($workId != 0){
+                $this->handleWorkspaceToken($workId,$userId,$request,$task,null);
             }
             if ($task->getList()->getUser()->getToken() !== $request->query->get('auth'))
             {
@@ -128,11 +176,29 @@ class TasksController extends AbstractController
             }else{
                 $this->tasksService->taskUpdateDone($task,$done);
             }
+
+            $update = new Update(
+                'https://todolist.com/tasks/workspaces',
+                json_encode([
+                    'type'=>'update',
+                    'id'=>$taskId,
+                    'name'=>$name,
+                    'content'=>$content,
+                    'startTime'=>$startTime,
+                    'endTime'=>$endTime,
+                    'done'=>$done
+                ])
+            );
+
+            $hub->publish($update);
         }else{
             $list = $this->listsService->listGet($listId);
             if (!$list)
             {
                 throw new \Exception('LIST_NOT_FOUND',404);
+            }
+            if ($workId != 0) {
+                $this->handleWorkspaceToken($workId, $userId, $request, null, $list);
             }
             if ($list->getUser()->getToken() !== $request->query->get('auth'))
             {
@@ -144,8 +210,50 @@ class TasksController extends AbstractController
                 throw new \Exception('ALL_TASKS_NOT_FOUND',404);
             }
 
-            $this->tasksService->tasksUpdateAllDone($tasks,$boolean);
+            $taskIds = $this->tasksService->tasksUpdateAllDone($tasks, $boolean);
+
+            $update = new Update(
+                'https://todolist.com/tasks/workspaces',
+                json_encode([
+                    'type'=>'updateAllDone',
+                    'taskIds'=> $taskIds,
+                    'boolean'=> $boolean
+                ])
+            );
+
+            $hub->publish($update);
         }
         return $this->json([],200);
+    }
+
+    private function handleWorkspaceToken(int $workId,int $userId,Request $request,$task,$list)
+    {
+        $workspace = $this->workspaceService->findWorkspaceById($workId);
+        if (!$workspace){
+            throw new \Exception('WORKSPACE_NOT_FOUND',404);
+        }
+        if ($workspace->getOwner()->getId() == $userId)
+        {
+            if ($list){
+                $request->query->set('auth',$list->getUser()->getToken());
+            }
+            if ($task){
+                $request->query->set('auth',$task->getList()->getUser()->getToken());
+            }
+        } else{
+            foreach ($workspace->getUsers() as $user)
+            {
+                if ($user->getId() == $userId)
+                {
+                    if ($list){
+                        $request->query->set('auth',$list->getUser()->getToken());
+                    }
+                    if ($task){
+                        $request->query->set('auth',$task->getList()->getUser()->getToken());
+                    }
+                    break;
+                }
+            }
+        }
     }
 }

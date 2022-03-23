@@ -28,6 +28,10 @@ class TaskList
     #[ORM\Column(type: 'boolean')]
     private $done;
 
+    #[ORM\ManyToOne(targetEntity: WorkSpace::class, inversedBy: 'sharedLists')]
+    #[ORM\JoinColumn(onDelete: 'SET NULL')]
+    private $workspace;
+
     public function __construct()
     {
         $this->tasks = new ArrayCollection();
@@ -103,4 +107,17 @@ class TaskList
 
         return $this;
     }
+
+    public function getWorkspace(): ?WorkSpace
+    {
+        return $this->workspace;
+    }
+
+    public function setWorkspace(?WorkSpace $workspace): self
+    {
+        $this->workspace = $workspace;
+
+        return $this;
+    }
+
 }

@@ -33,7 +33,7 @@ class RequestResponseExceptionSubscriber implements EventSubscriberInterface
     {
         $response = new Response();
         $exception = $event->getThrowable();
-        if ( $this->env == 'dev' )
+        if ( $this->env !== 'dev' )
         {
             $response->setContent($exception->getMessage());
             if ($exception->getCode() == 1062)

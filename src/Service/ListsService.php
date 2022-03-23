@@ -4,16 +4,20 @@ namespace App\Service;
 
 use App\Entity\TaskList;
 use App\Entity\User;
+use App\Entity\WorkSpace;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\HttpFoundation\Request;
 
 class ListsService
 {
     private EntityManagerInterface $entityManager;
+    private WorkspaceService $workspaceService;
 
-    public function __construct(EntityManagerInterface $entityManager)
+    public function __construct(EntityManagerInterface $entityManager,WorkspaceService $workspaceService)
     {
         $this->entityManager = $entityManager;
+        $this->workspaceService = $workspaceService;
     }
 
     public function listGet(int $listId): TaskList|null
@@ -29,7 +33,7 @@ class ListsService
         return $user->getTaskLists();
     }
 
-    public function listCreate(array $lists,int $userId): array|null
+    public function listCreate(array $lists,int $userId,WorkSpace|null $work): array|null
     {
         $user = $this->entityManager->getRepository(User::class)->find($userId);
         $listIds = array();
@@ -47,6 +51,9 @@ class ListsService
             }
             $list->setName($trimName);
             $list->setDone(false);
+            if ($work){
+                $list->setWorkspace($work);
+            }
             $this->entityManager->persist($list);
             $this->entityManager->flush();
 
@@ -55,22 +62,47 @@ class ListsService
         return $listIds;
     }
 
-    public function listsRemove(array $listIds,string $token)
+    public function listsRemove(array $listIds,Request $request,int $userId): array
     {
-        foreach ( $listIds as $listId){
+        $workIds = [];
+        foreach ( $listIds as $key =>$listId){
             $list = $this->listGet($listId);
             if (!$list)
             {
                 throw new \Exception('LISTS_NOT_FOUND',404);
             }
+            $workIds[$key] = $list->getWorkspace()?->getId();
+            $workId = $request->query->get('workId');
+            if ($workId!=0)
+            {
+                $workspace = $this->workspaceService->findWorkspaceById($workId);
+                if (!$workspace){
+                    throw new \Exception('WORKSPACE_NOT_FOUND',404);
+                }
+                if ($workspace->getOwner()->getId() == $userId)
+                {
+                    $request->query->set('auth',$list->getUser()->getToken());
+                }else{
+                    foreach ($workspace->getUsers() as $user)
+                    {
+                        if ($user->getId() == $userId)
+                        {
+                            $request->query->set('auth',$list->getUser()->getToken());
+                            break;
+                        }
+                    }
+                }
+            }
 
-            if ($list->getUser()->getToken() !== $token)
+            if ($list->getUser()->getToken() !== $request->query->get('auth'))
             {
                 throw new \Exception('INVALID_TOKEN',401);
             }
             $this->entityManager->remove($list);
         }
         $this->entityManager->flush();
+
+        return $workIds;
     }
 
     public function listUpdate(TaskList $list,string $name)
@@ -95,14 +127,18 @@ class ListsService
         $this->entityManager->flush();
     }
 
-    public function listsUpdateAllDone(Collection|array $lists,bool $boolean)
+    public function listsUpdateAllDone(Collection|array $lists,bool $boolean): array
     {
-        foreach ( $lists as $list )
+        $listIds = [];
+        foreach ( $lists as $key => $list )
         {
             /**@var TaskList $list**/
             $list->setDone($boolean);
+            $listIds[$key] = $list->getId();
         }
-
         $this->entityManager->flush();
+
+        return $listIds;
     }
+
 }

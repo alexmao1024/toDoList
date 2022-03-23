@@ -29,9 +29,17 @@ class User
     #[ORM\Column(type: 'string', length: 255, nullable: true)]
     private $token;
 
+    #[ORM\ManyToMany(targetEntity: WorkSpace::class, inversedBy: 'users')]
+    private $workSpaces;
+
+    #[ORM\OneToMany(mappedBy: 'owner', targetEntity: WorkSpace::class)]
+    private $selfWorkSpaces;
+
     public function __construct()
     {
         $this->taskLists = new ArrayCollection();
+        $this->workSpaces = new ArrayCollection();
+        $this->selfWorkSpaces = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -115,4 +123,59 @@ class User
         $signature = hash_hmac('md5', $info, 'secret');
         return $info.$signature;
     }
+
+    /**
+     * @return Collection|WorkSpace[]
+     */
+    public function getWorkSpaces(): Collection
+    {
+        return $this->workSpaces;
+    }
+
+    public function addWorkSpace(WorkSpace $workSpace): self
+    {
+        if (!$this->workSpaces->contains($workSpace)) {
+            $this->workSpaces[] = $workSpace;
+        }
+
+        return $this;
+    }
+
+    public function removeWorkSpace(WorkSpace $workSpace): self
+    {
+        $this->workSpaces->removeElement($workSpace);
+
+        return $this;
+    }
+
+    /**
+     * @return Collection|WorkSpace[]
+     */
+    public function getSelfWorkSpaces(): Collection
+    {
+        return $this->selfWorkSpaces;
+    }
+
+    public function addSelfWorkSpace(WorkSpace $selfWorkSpace): self
+    {
+        if (!$this->selfWorkSpaces->contains($selfWorkSpace)) {
+            $this->selfWorkSpaces[] = $selfWorkSpace;
+            $selfWorkSpace->setOwner($this);
+        }
+
+        return $this;
+    }
+
+    public function removeSelfWorkSpace(WorkSpace $selfWorkSpace): self
+    {
+        if ($this->selfWorkSpaces->removeElement($selfWorkSpace)) {
+            // set the owning side to null (unless already changed)
+            if ($selfWorkSpace->getOwner() === $this) {
+                $selfWorkSpace->setOwner(null);
+            }
+        }
+
+        return $this;
+    }
+
 }

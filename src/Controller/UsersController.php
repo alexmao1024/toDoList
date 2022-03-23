@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Entity\User;
 use App\Service\UsersService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -71,5 +72,48 @@ class UsersController extends AbstractController
                 'expiresIn' => time() + 3600
             ]
         );
+    }
+
+    #[Route('/users/{userId}', name: 'users_show',methods: ['GET'])]
+    public function usersShow(Request $request,int $userId): Response
+    {
+        $response = new Response();
+
+        $currentUser = $this->usersService->findUserById($userId);
+        if (!$currentUser)
+        {
+            throw new \Exception('USER_NOT_FOUND',404);
+        }
+
+        if ($currentUser->getToken() !== $request->query->get('auth'))
+        {
+            throw new \Exception('INVALID_TOKEN',401);
+        }
+
+        $users = $this->usersService->findAllUser();
+        $otherUser = [];
+
+        /**@var User $user**/
+        foreach ( $users as $key => $user )
+        {
+            if ($user->getId() !== $currentUser->getId())
+            {
+                $otherUser[$key] = $user;
+            }
+        }
+
+        if (!$otherUser)
+        {
+            return $this->json([]);
+        }
+
+        $resultArray = [];
+        foreach ( $otherUser as $key => $user )
+        {
+            $resultArray[$key]['id'] = $user->getId();
+            $resultArray[$key]['username'] = $user->getName();
+        }
+
+        return $response->setContent(json_encode($resultArray));
     }
 }

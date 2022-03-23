@@ -14,6 +14,11 @@ class UsersService
         $this->entityManager = $entityManager;
     }
 
+    public function findAllUser(): array
+    {
+        return $this->entityManager->getRepository(User::class)->findAll();
+    }
+
     public function findUser(string $username,string $password): User|null
     {
         return $this->entityManager->getRepository(User::class)->findOneBy(['name' => $username,'password' => $password]);
