@@ -3,6 +3,8 @@
 namespace App\Controller;
 
 use App\Entity\TaskList;
+use App\Entity\User;
+use App\Entity\WorkSpace;
 use App\Service\ListsService;
 use App\Service\UsersService;
 use App\Service\WorkspaceService;
@@ -93,22 +95,31 @@ class ListsController extends AbstractController
                 throw new \Exception('WORKSPACE_NOT_FOUND',404);
             }
             $listIds = $this->listsService->listCreate($lists, $userId,$workspace);
+
+            $allUsers = $this->handleWorkspaceUser($workspace);
+
+            /**@var User $sharedUser**/
+            foreach ( $allUsers as $sharedUser)
+            {
+                if ($sharedUser->getId() != $userId){
+
+                    $update = new Update(
+                        'https://todolist.com/lists/workspaces/'.$sharedUser->getId(),
+                        json_encode([
+                            'class'=>'lists',
+                            'type'=>'create',
+                            'ids'=>$listIds,
+                            'lists'=>$lists,
+                            'workId'=>$workspace->getId()
+                        ])
+                    );
+
+                    $hub->publish($update);
+                }
+            }
         }else{
             $listIds = $this->listsService->listCreate($lists, $userId,null);
         }
-
-        $update = new Update(
-            'https://todolist.com/lists/workspaces',
-            json_encode([
-                'type'=>'create',
-                'ids'=>$listIds,
-                'lists'=>$lists,
-                'userId'=>$userId,
-                'workId'=>$requestArray['workspaceId']
-            ])
-        );
-
-        $hub->publish($update);
 
         return $this->json([
             'ids'=>$listIds
@@ -125,18 +136,36 @@ class ListsController extends AbstractController
             throw new \Exception('USER_NOT_FOUND',404);
         }
 
-        $workIds = $this->listsService->listsRemove($requestArray, $request, $userId);
+        $this->listsService->listsRemove($requestArray, $request, $userId);
 
-        $update = new Update(
-            'https://todolist.com/lists/workspaces',
-            json_encode([
-                'type'=>'delete',
-                'ids'=>$requestArray,
-                'workIds'=>$workIds
-            ])
-        );
+        if ($request->query->get('workId') != 0){
+            $workspace = $this->workspaceService->findWorkspaceById($request->query->get('workId'));
+            if (!$workspace){
+                throw new \Exception('WORKSPACE_NOT_FOUND',404);
+            }
+            $allUsers = $this->handleWorkspaceUser($workspace);
 
-        $hub->publish($update);
+
+            /**@var User $sharedUser**/
+            foreach ( $allUsers as $sharedUser)
+            {
+
+                if ($sharedUser->getId() != $userId){
+
+                    $update = new Update(
+                        'https://todolist.com/lists/workspaces/'.$sharedUser->getId(),
+                        json_encode([
+                            'class'=>'lists',
+                            'type'=>'delete',
+                            'id'=>$workspace->getId(),
+                            'ids'=>$requestArray
+                        ])
+                    );
+
+                    $hub->publish($update);
+                }
+            }
+        }
 
         return $this->json([],200);
 
@@ -180,18 +209,30 @@ class ListsController extends AbstractController
                 $this->listsService->listUpdateDone($list,$done);
             }
 
-            $update = new Update(
-                'https://todolist.com/lists/workspaces',
-                json_encode([
-                    'type'=>'update',
-                    'id'=>$id,
-                    'name'=>$name,
-                    'done'=>$done,
-                    'workId'=>$workId
-                ])
-            );
+            if ($workId != 0){
+                $workspace = $this->workspaceService->findWorkspaceById($workId);
+                $allUsers = $this->handleWorkspaceUser($workspace);
 
-            $hub->publish($update);
+                /**@var User $sharedUser**/
+                foreach ( $allUsers as $sharedUser){
+
+                    if ($sharedUser->getId() != $userId) {
+                        $update = new Update(
+                            'https://todolist.com/lists/workspaces/' . $sharedUser->getId(),
+                            json_encode([
+                                'class' => 'lists',
+                                'type' => 'update',
+                                'id' => $id,
+                                'name' => $name,
+                                'done' => $done,
+                                'workId' => $workId
+                            ])
+                        );
+
+                        $hub->publish($update);
+                    }
+                }
+            }
         }else{
             if ($user->getToken() !== $request->query->get('auth'))
             {
@@ -212,16 +253,29 @@ class ListsController extends AbstractController
                 }
                 $listIds = $this->listsService->listsUpdateAllDone($lists, $boolean);
             }
-            $update = new Update(
-                'https://todolist.com/lists/workspaces',
-                json_encode([
-                    'type'=>'updateAllDone',
-                    'listIds'=> $listIds,
-                    'boolean'=> $boolean
-                ])
-            );
 
-            $hub->publish($update);
+            if ($workId != 0){
+                $workspace = $this->workspaceService->findWorkspaceById($workId);
+                $allUsers = $this->handleWorkspaceUser($workspace);
+
+                /**@var User $sharedUser**/
+                foreach ( $allUsers as $sharedUser){
+
+                    if ($sharedUser->getId() != $userId) {
+                        $update = new Update(
+                            'https://todolist.com/lists/workspaces/' . $sharedUser->getId(),
+                            json_encode([
+                                'class' => 'lists',
+                                'type' => 'updateAllDone',
+                                'listIds' => $listIds,
+                                'boolean' => $boolean
+                            ])
+                        );
+
+                        $hub->publish($update);
+                    }
+                }
+            }
         }
 
 
@@ -248,5 +302,16 @@ class ListsController extends AbstractController
                 }
             }
         }
+    }
+
+    private function handleWorkspaceUser(WorkSpace $workspace): array
+    {
+        $allUsers = [];
+        foreach ( $workspace->getUsers() as $key => $user)
+        {
+            $allUsers[$key] = $user;
+        }
+        array_push($allUsers,$workspace->getOwner());
+        return $allUsers;
     }
 }

@@ -3,6 +3,8 @@
 namespace App\Controller;
 
 use App\Entity\Task;
+use App\Entity\User;
+use App\Entity\WorkSpace;
 use App\Service\ListsService;
 use App\Service\TasksService;
 use App\Service\WorkspaceService;
@@ -96,22 +98,34 @@ class TasksController extends AbstractController
 
         $task = $this->tasksService->taskCreate($name, $content, $startTime, $endTime, $listId);
 
-        $update = new Update(
-            'https://todolist.com/tasks/workspaces',
-            json_encode([
-                'type'=>'create',
-                'id'=>$task->getId(),
-                'name'=>$name,
-                'content'=>$content,
-                'startTime'=> $startTime,
-                'endTime'=>$endTime,
-                'userId'=>$userId,
-                'workId'=>$task->getList()->getWorkspace()?->getId(),
-                'listId'=>$task->getList()->getId()
-            ])
-        );
+        if ($workId != 0){
+            $workspace = $this->workspaceService->findWorkspaceById($workId);
 
-        $hub->publish($update);
+            $allUsers = $this->handleWorkspaceUser($workspace);
+
+            /**@var User $sharedUser**/
+            foreach ( $allUsers as $sharedUser) {
+
+                if ($sharedUser->getId() != $userId) {
+                    $update = new Update(
+                        'https://todolist.com/tasks/workspaces/' . $sharedUser->getId(),
+                        json_encode([
+                            'class'=>'tasks',
+                            'type' => 'create',
+                            'id' => $task->getId(),
+                            'name' => $name,
+                            'content' => $content,
+                            'startTime' => $startTime,
+                            'endTime' => $endTime,
+                            'workId' => $task->getList()->getWorkspace()?->getId(),
+                            'listId' => $task->getList()->getId()
+                        ])
+                    );
+
+                    $hub->publish($update);
+                }
+            }
+        }
 
         return $this->json([
             'id'=>$task->getId()
@@ -125,15 +139,29 @@ class TasksController extends AbstractController
 
         $this->tasksService->tasksRemove($requestArray,$request,$userId);
 
-        $update = new Update(
-            'https://todolist.com/tasks/workspaces',
-            json_encode([
-                'type'=>'delete',
-                'ids'=>$requestArray
-            ])
-        );
+        $workId = $request->query->get('workId');
+        if ($workId != 0){
+            $workspace = $this->workspaceService->findWorkspaceById($workId);
 
-        $hub->publish($update);
+            $allUsers = $this->handleWorkspaceUser($workspace);
+
+            /**@var User $sharedUser**/
+            foreach ( $allUsers as $sharedUser) {
+
+                if ($sharedUser->getId() != $userId) {
+                    $update = new Update(
+                        'https://todolist.com/tasks/workspaces/' . $sharedUser->getId(),
+                        json_encode([
+                            'class'=>'tasks',
+                            'type'=>'delete',
+                            'ids'=>$requestArray
+                        ])
+                    );
+
+                    $hub->publish($update);
+                }
+            }
+        }
 
         return $this->json([],200);
 
@@ -177,20 +205,32 @@ class TasksController extends AbstractController
                 $this->tasksService->taskUpdateDone($task,$done);
             }
 
-            $update = new Update(
-                'https://todolist.com/tasks/workspaces',
-                json_encode([
-                    'type'=>'update',
-                    'id'=>$taskId,
-                    'name'=>$name,
-                    'content'=>$content,
-                    'startTime'=>$startTime,
-                    'endTime'=>$endTime,
-                    'done'=>$done
-                ])
-            );
+            if ($workId != 0){
+                $workspace = $this->workspaceService->findWorkspaceById($workId);
+                $allUsers = $this->handleWorkspaceUser($workspace);
 
-            $hub->publish($update);
+                /**@var User $sharedUser**/
+                foreach ( $allUsers as $sharedUser){
+
+                    if ($sharedUser->getId() != $userId) {
+                        $update = new Update(
+                            'https://todolist.com/tasks/workspaces/' . $sharedUser->getId(),
+                            json_encode([
+                                'class'=>'tasks',
+                                'type'=>'update',
+                                'id'=>$taskId,
+                                'name'=>$name,
+                                'content'=>$content,
+                                'startTime'=>$startTime,
+                                'endTime'=>$endTime,
+                                'done'=>$done
+                            ])
+                        );
+
+                        $hub->publish($update);
+                    }
+                }
+            }
         }else{
             $list = $this->listsService->listGet($listId);
             if (!$list)
@@ -212,16 +252,29 @@ class TasksController extends AbstractController
 
             $taskIds = $this->tasksService->tasksUpdateAllDone($tasks, $boolean);
 
-            $update = new Update(
-                'https://todolist.com/tasks/workspaces',
-                json_encode([
-                    'type'=>'updateAllDone',
-                    'taskIds'=> $taskIds,
-                    'boolean'=> $boolean
-                ])
-            );
+            if ($workId != 0){
+                $workspace = $this->workspaceService->findWorkspaceById($workId);
+                $allUsers = $this->handleWorkspaceUser($workspace);
 
-            $hub->publish($update);
+                /**@var User $sharedUser**/
+                foreach ( $allUsers as $sharedUser){
+
+                    if ($sharedUser->getId() != $userId) {
+                        $update = new Update(
+                            'https://todolist.com/tasks/workspaces/' . $sharedUser->getId(),
+                            json_encode([
+                                'class'=>'tasks',
+                                'type'=>'updateAllDone',
+                                'taskIds'=> $taskIds,
+                                'boolean'=> $boolean
+                            ])
+                        );
+
+                        $hub->publish($update);
+                    }
+                }
+            }
+
         }
         return $this->json([],200);
     }
@@ -255,5 +308,16 @@ class TasksController extends AbstractController
                 }
             }
         }
+    }
+
+    private function handleWorkspaceUser(WorkSpace $workspace): array
+    {
+        $allUsers = [];
+        foreach ( $workspace->getUsers() as $key => $user)
+        {
+            $allUsers[$key] = $user;
+        }
+        array_push($allUsers,$workspace->getOwner());
+        return $allUsers;
     }
 }

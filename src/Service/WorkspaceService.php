@@ -63,10 +63,12 @@ class WorkspaceService
         $this->entityManager->flush();
     }
 
-    public function workspaceRemove(int $workId)
+    public function workspaceRemove(int $workId,User $user)
     {
         $workspace = $this->findWorkspaceById($workId);
-
+        if ($workspace->getOwner() !== $user){
+            throw new \Exception('INVALID_TOKEN',401);
+        }
         $this->entityManager->remove($workspace);
         $this->entityManager->flush();
     }

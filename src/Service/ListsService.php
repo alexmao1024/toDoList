@@ -62,16 +62,15 @@ class ListsService
         return $listIds;
     }
 
-    public function listsRemove(array $listIds,Request $request,int $userId): array
+    public function listsRemove(array $listIds,Request $request,int $userId)
     {
-        $workIds = [];
-        foreach ( $listIds as $key =>$listId){
+        foreach ( $listIds as $listId){
             $list = $this->listGet($listId);
             if (!$list)
             {
                 throw new \Exception('LISTS_NOT_FOUND',404);
             }
-            $workIds[$key] = $list->getWorkspace()?->getId();
+
             $workId = $request->query->get('workId');
             if ($workId!=0)
             {
@@ -102,7 +101,6 @@ class ListsService
         }
         $this->entityManager->flush();
 
-        return $workIds;
     }
 
     public function listUpdate(TaskList $list,string $name)
