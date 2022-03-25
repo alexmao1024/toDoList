@@ -242,9 +242,9 @@ class WorkSpacesController extends AbstractController
                 {
                     $workspace->addSharedList($list);
                     $newIds[$key] = $id;
+                    $listNames[$key] = $list->getName();
+                    $listDones[$key] = $list->getDone();
                 }
-                $listNames[$key] = $list->getName();
-                $listDones[$key] = $list->getDone();
             }
             $this->workspaceService->workspaceFlush();
         }elseif ($type == 'removeLists')
@@ -260,9 +260,9 @@ class WorkSpacesController extends AbstractController
                 {
                     $workspace->removeSharedList($list);
                     $newIds[$key] = $id;
+                    $listNames[$key] = $list->getName();
+                    $listDones[$key] = $list->getDone();
                 }
-                $listNames[$key] = $list->getName();
-                $listDones[$key] = $list->getDone();
             }
             $this->workspaceService->workspaceFlush();
         }elseif ($type == 'addUsers')
